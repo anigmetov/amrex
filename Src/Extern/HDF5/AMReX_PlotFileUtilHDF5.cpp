@@ -1291,4 +1291,25 @@ WriteMultiLevelPlotfileHDF5 (const std::string &plotfilename,
                                           compression, versionName, levelPrefix, mfPrefix, extra_dirs);
 }
 
+void
+WriteSingleLevelPlotfileHDF5ND (const std::string& plotfilename,
+                                const MultiFab& mf, const Vector<std::string>& varnames,
+                                const Geometry& geom, Real time, int level_step,
+                                const std::string &compression,
+                                const std::string &versionName,
+                                const std::string &levelPrefix,
+                                const std::string &mfPrefix,
+                                const Vector<std::string>& extra_dirs)
+{
+    Vector<const MultiFab*> mfarr(1,&mf);
+    Vector<Geometry> geomarr(1,geom);
+    Vector<int> level_steps(1,level_step);
+    Vector<IntVect> ref_ratio;
+
+    WriteMultiLevelPlotfileHDF5ND(plotfilename, 1, mfarr, varnames, geomarr, time, level_steps, ref_ratio,
+                                  compression, versionName, levelPrefix, mfPrefix, extra_dirs);
+}
+
+#include "AMReX_PlotFileUtilHDF53D.H"
+
 } // namespace amrex
