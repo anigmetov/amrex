@@ -92,7 +92,7 @@ namespace amrex
                                                const std::string &mfPrefix = "Cell",
                                                const Vector<std::string>& extra_dirs = Vector<std::string>());
 
-    void WriteSingleLevelPlotfileHDF5ND (const std::string &plotfilename,
+    void WriteSingleLevelPlotfileHDF5MD (const std::string &plotfilename,
                                          const MultiFab &mf,
                                          const Vector<std::string> &varnames,
                                          const Geometry &geom,
@@ -104,7 +104,7 @@ namespace amrex
                                          const std::string &mfPrefix = "Cell",
                                          const Vector<std::string>& extra_dirs = Vector<std::string>());
 
-    void WriteMultiLevelPlotfileHDF5ND (const std::string &plotfilename,
+    void WriteMultiLevelPlotfileHDF5MD (const std::string &plotfilename,
                                         int nlevels,
                                         const Vector<const MultiFab*> &mf,
                                         const Vector<std::string> &varnames,
