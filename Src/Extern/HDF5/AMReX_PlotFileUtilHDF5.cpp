@@ -1459,7 +1459,9 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
 
         CreateWriteHDF5AttrInt(grp, "domain_type", AMREX_SPACEDIM, type);
 
-        CreateWriteHDF5AttrInt(grp, "steps", 1, &level_steps[level]);
+        CreateWriteHDF5AttrInt(fid, "steps", 1, &level_steps[level]);
+
+        CreateWriteHDF5AttrInt(fid, "nlevel", 1, &nlevels);
 
         H5Gclose(grp);
 
@@ -1858,14 +1860,15 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
 #endif
             H5Sclose(fspace);
 
+            // Big end dset and metadata
             int ngrow = mf[level]->nGrow();
             double cur_time = (double)time;
             int ratio = 1;
             if (ref_ratio.size() > 0)
                 ratio = ref_ratio[level][0];
-            // Big end dset
             fspace = H5Screate_simple(2, boxSpace, NULL);
             dsetName = "big_end#" + std::to_string(boxSizeID);
+            int nBoxBatch = boxSizeCountID.size();
 #ifdef AMREX_USE_HDF5_ASYNC
             dset = H5Dcreate_async(grp, dsetName.c_str(), H5T_NATIVE_INT, fspace, 
                                    H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT, es_id_g);
@@ -1884,6 +1887,8 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
             CreateWriteHDF5AttrDoubleAsync(grp, "time", 1, &cur_time);
 
             CreateWriteHDF5AttrIntAsync(grp, "ref_ratio", 1, &ratio);
+
+            CreateWriteHDF5AttrIntAsync(grp, "nbox_batch", 1, &nBoxBatch);
 #else
             dset = H5Dcreate(grp, dsetName.c_str(), H5T_NATIVE_INT, fspace, 
                                    H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -1904,6 +1909,8 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
             CreateWriteHDF5AttrDouble(grp, "time", 1, &cur_time);
 
             CreateWriteHDF5AttrInt(grp, "ref_ratio", 1, &ratio);
+
+            CreateWriteHDF5AttrInt(grp, "nbox_batch", 1, &nBoxBatch);
 #endif
             H5Sclose(fspace);
 
