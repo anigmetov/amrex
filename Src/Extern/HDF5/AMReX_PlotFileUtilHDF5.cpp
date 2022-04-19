@@ -1444,7 +1444,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
 
         CreateWriteHDF5AttrString(fid, "version", versionName.c_str());
 
-        CreateWriteHDF5AttrString(fid, "format", "AMReX_HDF5_Multi_Dim_by_Level_Forder");
+        CreateWriteHDF5AttrString(fid, "format", "AMReX_HDF5_Multi_Dim_by_Level_Corder");
 
         grp = H5Gcreate(fid, "domain", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
         if (grp < 0)
@@ -1471,7 +1471,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
         if (grp < 0)
             amrex::Abort("Level group create failed!");
 
-        int nbox = mf[level]->boxArray().size();
+        int nbox = 1;
         CreateWriteHDF5AttrInt(grp, "nbox", 1, &nbox);
 
         double cur_time = (double)time;
@@ -1650,6 +1650,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
     }
 
     hsize_t myOffset[AMREX_SPACEDIM], myCount[AMREX_SPACEDIM];
+    hsize_t new_myOffset[AMREX_SPACEDIM], new_myCount[AMREX_SPACEDIM];
     hsize_t boxOffset[AMREX_SPACEDIM], boxCount[AMREX_SPACEDIM];
     hsize_t fileOffset[AMREX_SPACEDIM+1], fileCount[AMREX_SPACEDIM+1];
     int myBoxCount(0);
@@ -1661,6 +1662,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
         Long writeDataSize = writeDataItems * whichRDBytes;
         hsize_t varDataSize = fab.box().numPts() * whichRDBytes;
         char *dataPtr = new char[writeDataSize];
+        char *dataPtr_c = new char[varDataSize];
         
         for (int j = 0; j < AMREX_SPACEDIM; j++) {
             centering = fab.box().ixType().test(j) ? 1 : 0;
@@ -1668,9 +1670,27 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
             myCount[j]  = fab.box().bigEnd(j) - myOffset[j] + 1 - centering;
         }
 
-        hid_t dspace = H5Screate_simple(AMREX_SPACEDIM, myCount, NULL);
+        if (AMREX_SPACEDIM == 2) {
+            new_myOffset[0] = myOffset[1];
+            new_myCount[0]  = myCount[1];
+            new_myOffset[1] = myOffset[0];
+            new_myCount[1]  = myCount[0];
+        }
+        else if (AMREX_SPACEDIM == 3) {
+            new_myOffset[0] = myOffset[0];
+            new_myCount[0]  = myCount[0];
+            new_myOffset[1] = myOffset[2];
+            new_myCount[1]  = myCount[2];
+            new_myOffset[2] = myOffset[1];
+            new_myCount[2]  = myCount[1];
+        }
 
-        H5Sselect_hyperslab(fspace, H5S_SELECT_SET, myOffset, NULL, myCount, NULL);
+        hid_t dspace = H5Screate_simple(AMREX_SPACEDIM, new_myCount, NULL);
+        H5Sselect_hyperslab(fspace, H5S_SELECT_SET, new_myOffset, NULL, new_myCount, NULL);
+
+        /* fprintf(stderr, "Rank %d, offset %llu %llu %llu, count %llu %llu %llu, original %llu %llu %llu count %llu %llu %llu\n", */ 
+        /*         myProc, new_myOffset[0], new_myOffset[1], new_myOffset[2], new_myCount[0], new_myCount[1], new_myCount[2], */ 
+        /*         myOffset[0], myOffset[1], myOffset[2], myCount[0], myCount[1], myCount[2]); */
 
         // Get data pointer
         Real const* fabdata = fab.dataPtr();
@@ -1694,13 +1714,23 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
         }
 
         for (int j = 0; j < nComp; j++) {
+
+            // Change to C-order: C(k,j,i) = F(j,i,k)
+            hsize_t offset = j * fab.box().numPts();
+            for (int ii = 0; ii < myCount[0]; ++ii)
+                for (int jj = 0; jj < myCount[1]; ++jj)
+                    for (int kk = 0; kk < myCount[2]; ++kk) {
+                        size_t from_idx = offset + jj*myCount[0]*myCount[2] + ii*myCount[2] + kk;
+                        size_t to_idx = kk*myCount[0]*myCount[1] + jj*myCount[0] + ii;
+                        memcpy(&dataPtr_c[to_idx*whichRDBytes], &dataPtr[from_idx*whichRDBytes], whichRDBytes);
+                    }
+
 #ifdef AMREX_USE_HDF5_ASYNC
             ret = H5Dwrite_async(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_col,
-                                 &(dataPtr[j*varDataSize]), es_id_g);
+                                 dataPtr_c, es_id_g);
             if(ret < 0) amrex::Abort("H5Dwrite_async failed!");
 #else
-            ret = H5Dwrite(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_col,
-                           &(dataPtr[j*varDataSize]));
+            ret = H5Dwrite(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_col, dataPtr_c);
             if(ret < 0) amrex::Abort("H5Dwrite failed!");
 #endif
         } // End for comp
@@ -1711,6 +1741,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
 
         H5Sclose(dspace);
         delete [] dataPtr;
+        delete [] dataPtr_c;
     }
 
     // Residue write if less boxes is written than others due to chunking and collective I/O
@@ -2031,6 +2062,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
 
                 hasBox = 1;
                 char *dataPtr = new char[writeDataSize];
+                char *dataPtr_c = new char[varDataSize];
 
                 // Get data pointer
                 Real const* fabdata = fab.dataPtr();
@@ -2056,15 +2088,24 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
                 /* fprintf(stderr, "Rank %d, box %d, mem sel %llu, file sel %llu\n", myProc, i, H5Sget_select_npoints(dspace), H5Sget_select_npoints(fspace)); */
 
                 for (int j = 0; j < nComp; j++) {
-            
+
+                    // Change to C-order: C(k,j,i) = F(j,i,k)
+                    hsize_t offset = j * fab.box().numPts();
+                    for (int ii = 0; ii < myCount[0]; ++ii)
+                        for (int jj = 0; jj < myCount[1]; ++jj)
+                            for (int kk = 0; kk < myCount[2]; ++kk) {
+                                size_t from_idx = offset + jj*myCount[0]*myCount[2] + ii*myCount[2] + kk;
+                                size_t to_idx = kk*myCount[0]*myCount[1] + jj*myCount[0] + ii;
+                                memcpy(&dataPtr_c[to_idx*whichRDBytes], &dataPtr[from_idx*whichRDBytes], whichRDBytes);
+                            }
+
 #ifdef AMREX_USE_HDF5_ASYNC
                     ret = H5Dwrite_async(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_ind,
-                                         &(dataPtr[j*varDataSize]), es_id_g);
-                    if(ret < 0) amrex::Abort("H5Dwrite_async failed! 690");
+                                         dataPtr_c, es_id_g);
+                    if(ret < 0) amrex::Abort("H5Dwrite_async failed! 2086");
 #else
-                    ret = H5Dwrite(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_ind,
-                                   &(dataPtr[j*varDataSize]));
-                    if(ret < 0) amrex::Abort("H5Dwrite failed! 694");
+                    ret = H5Dwrite(dsetIds[j], H5T_NATIVE_DOUBLE, dspace, fspace, dxpl_ind, dataPtr_c);
+                    if(ret < 0) amrex::Abort("H5Dwrite failed! 2089");
 #endif
                 } // End for comp
 
@@ -2073,6 +2114,7 @@ void WriteMultiLevelPlotfileHDF5MD (const std::string& plotfilename,
                 /*         fab.box().bigEnd(0), fab.box().bigEnd(1), fab.box().bigEnd(2), myBoxCount); */
 
                 delete [] dataPtr;
+                delete [] dataPtr_c;
             } // End mf iterator
 
             for (int j = 0; j < nComp; j++) {
